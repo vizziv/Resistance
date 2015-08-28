@@ -1,0 +1,10 @@
+# Ur/Web
+*.exe
+*.sql
+
+# Database
+db/*
+logfile
+
+# OS X
+.DS_Store
