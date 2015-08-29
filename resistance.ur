@@ -3,36 +3,49 @@
  * - avoid needing safeGet.
  *)
 
-fun rpcClose src action = set src None; rpc action
+fun buttons' rows =
+    srcShouldShow <- source True;
+    let
+        val sgl =
+            shouldShow <- signal srcShouldShow;
+            if shouldShow
+            then return (List.mapX (fn {Value = value,
+                                        Onclick = onclick} => <xml>
+              <button value={value}
+                      onclick={fn _ => set srcShouldShow False; onclick}/>
+            </xml>) rows)
+            else return <xml></xml>
+    in
+        return <xml><dyn signal={sgl}/></xml>
+    end
 
-fun formStart src = <xml>
-  <button value="Start" onclick={fn _ => rpc Controller.start}/>
-</xml>
+fun button1' row = buttons' (row :: [])
 
-fun formVote src = <xml>
-  <button value="Approve" onclick={fn _ => rpcClose src
-                                                    (Controller.vote True)}/>
-  <button value="Reject" onclick={fn _ => rpcClose src
-                                                   (Controller.vote False)}/>
-</xml>
+fun buttons rows = <xml><active code={buttons' rows}/></xml>
+fun button1 rows = <xml><active code={button1' rows}/></xml>
 
-fun formMission src = <xml>
-  <button value="Pass" onclick={fn _ => rpcClose src
-                                                 (Controller.mission True)}/>
-  <button value="Fail" onclick={fn _ => rpcClose src
-                                                 (Controller.mission False)}/>
-</xml>
+val formStart = button1 {Value = "Start", Onclick = rpc Controller.start}
 
-fun formPropose' numPlayers missionSize src =
+val formVote =
+    buttons ({Value = "Approve",
+              Onclick = rpc (Controller.vote True)}
+          :: {Value = "Reject",
+              Onclick = rpc (Controller.vote False)} :: [])
+
+val formMission =
+    buttons ({Value = "Success",
+              Onclick = rpc (Controller.mission True)}
+          :: {Value = "Fail",
+              Onclick = rpc (Controller.mission False)} :: [])
+
+fun formPropose' numPlayers missionSize =
     srcs <- List.tabulateM (fn _ => source 0.0) missionSize;
     let
         val sgl =
             players <- List.mapM (compose (Monad.mp round) signal) srcs;
             if Lib.distinct players
-            then return <xml>
-              <button value="Propose"
-                      onclick={fn _ => rpc (Controller.propose players)}/>
-            </xml>
+            then return (button1 {Value = "Propose",
+                                  Onclick = rpc (Controller.propose players)})
             else return <xml></xml>
     in
         return <xml>
@@ -46,11 +59,11 @@ fun formPropose' numPlayers missionSize src =
         </xml>
     end
 
-fun formPropose numPlayers missionSize src = <xml>
-  <active code={formPropose' numPlayers missionSize src}/>
+fun formPropose numPlayers missionSize = <xml>
+  <active code={formPropose' numPlayers missionSize}/>
 </xml>
 
-fun render player responseq src =
+fun render player responseq =
     case responseq of
         None => <xml></xml>
       | Some response =>
@@ -59,13 +72,12 @@ fun render player responseq src =
             if player = propose.Leader
             then formPropose (Game.numPlayers response.Game)
                              propose.MissionSize
-                             src
             else <xml></xml>
           | Game.Mission players =>
             if List.mem player players
-            then formMission src
+            then formMission
             else <xml></xml>
-          | Game.Vote _ => formVote src
+          | Game.Vote _ => formVote
           | _ => <xml></xml>
 
 fun play showStart group =
@@ -91,17 +103,19 @@ fun play showStart group =
             Buffer.write buffer (show response.Game);
             Buffer.write buffer (show response.Request);
             listen ()
+        val fm =
+            showStart <- signal srcShowStart;
+            responseq <- signal srcResponse;
+            return (if showStart
+                    then formStart
+                    else render player responseq)
     in
         return <xml>
           <body onload={listen ()}>
             <h1>Resistance</h1>
             <h2>Game #{[group]}</h2>
             <div>
-              <dyn signal={showStart <- signal srcShowStart;
-                           if showStart
-                           then return (formStart srcShowStart)
-                           else responseq <- signal srcResponse;
-                                return (render player responseq srcResponse)}/>
+              <dyn signal={fm}/>
             </div>
             <div>
               <dyn signal={Buffer.render buffer}/>
@@ -127,12 +141,14 @@ val menu =
           {List.mapX (fn group => <xml>
             <li>
               <form>
+                <hidden{#Dummy}/>
                 <submit action={playJoin group} value={"Join game #" ^ (show group)}/>
               </form>
             </li>
           </xml>) groups}
           <li>
             <form>
+              <hidden{#Dummy}/>
               <submit action={playCreate} value={"Create a new game"}/>
             </form>
           </li>
