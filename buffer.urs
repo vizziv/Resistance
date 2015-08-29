@@ -1,3 +1,5 @@
+(* From the official Ur/Web demo. *)
+
 type t
 
 val create : transaction t

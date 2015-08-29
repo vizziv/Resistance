@@ -1,3 +1,5 @@
+(* From the official Ur/Web demo. *)
+
 datatype lines = End | Line of string * source lines
 
 type t = { Head : source lines, Tail : source (source lines) }
