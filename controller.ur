@@ -12,19 +12,23 @@ type response = Game.response
 type player = Game.player
 type role = Game.role
 
-datatype init = Resistance | Spy of list player
+type user = {Id : id, Player : player}
 
-type message = {Response : response, Init : option init}
+datatype reveal = Resistance | Spy of list player
+
+type message =
+     {Response : response,
+      Init : option {Player : player, Reveal : reveal}}
 
 sequence ids
 
 table players :
-      {Client : client,
+      {User : serialized user,
        Channel : channel message,
        Id : id,
        Role : serialized (option Game.role),
        Player : player}
-          PRIMARY KEY Client
+          PRIMARY KEY User
 
 table groups : {Id : id, Size : int} PRIMARY KEY Id
 table games : {Id : id, Response : serialized response} PRIMARY KEY Id
@@ -44,16 +48,19 @@ val createGroup =
     return id
 
 fun joinGroup id =
-    cli <- self;
     chan <- channel;
     player <- sizeGroup id;
-    dml (UPDATE groups SET Size = Size + 1 WHERE Id = {[id]});
-    dml (Lib.insertRow players {Client = cli,
-                                Channel = chan,
-                                Id = id,
-                                Role = serialize None,
-                                Player = player});
-    return {Player = player, Channel = chan}
+    let
+        val user = {Id = id, Player = player}
+    in
+        dml (UPDATE groups SET Size = Size + 1 WHERE Id = {[id]});
+        dml (Lib.insertRow players {User = serialize user,
+                                    Channel = chan,
+                                    Id = id,
+                                    Role = serialize None,
+                                    Player = player});
+        return {User = user, Channel = chan}
+    end
 
 val allGroups =
     query1' (SELECT groups.Id FROM groups) (fn row ids => row.Id :: ids) []
@@ -80,19 +87,20 @@ fun start' id _ _ _ : transaction unit =
     dml (Lib.insertRow games {Id = id, Response = serialize response});
     let
         val spies =
-            List.mapPartial Lib.id (List.mapi (fn i role =>
-                                                  case role of
-                                                      Game.Spy => Some i
-                                                    | Game.Resistance => None)
-                                              roles)
+            Lib.mapiPartial (fn i role =>
+                                case role of
+                                    Game.Spy => Some i
+                                  | Game.Resistance => None)
+                            roles
     in
         queryI1 (Lib.sqlWhereEq [#Id] [_] players id)
-                (fn {Channel = chan, Role = roleSerial} =>
+                (fn {Channel = chan, Player = player, Role = roleSerial} =>
                     send chan
                          {Response = response,
-                          Init = Some (case deserialize roleSerial of
-                                           Some Game.Spy => Spy spies
-                                         | _ => Resistance)})
+                          Init = Some {Player = player,
+                                       Reveal = case deserialize roleSerial of
+                                                    Some Game.Spy => Spy spies
+                                                  | _ => Resistance}})
     end
 
 fun propose' id player _ players =
@@ -146,17 +154,18 @@ fun mission' id player roleq success =
         else return ()
       | _ => return ()
 
-fun withClient name [t] (action : id -> player -> option role
-                                  -> t -> transaction unit) (x : t) =
-    debug "withClient";
-    cli <- self;
-    {Id = id,
-     Player = player,
-     Role = roleSerial} <- Lib.sqlLookup [#Client] [_] players cli;
-    debug (name ^ " " ^ show id ^ "/" ^ show player);
-    action id player (deserialize roleSerial) x
+fun withUser [t] name (action : id -> player -> option role
+                                -> t -> transaction unit)
+             (x : t) user =
+    let
+        val {Id = id, Player = player} = user
+    in
+        debug ("withUser: " ^ name ^ " " ^ show id ^ "/" ^ show player);
+        {Role = roleSerial} <- Lib.sqlLookup [#User] [_] players (serialize user);
+        action id player (deserialize roleSerial) x
+    end
 
-val start = withClient "start" start' ()
-val propose = withClient "propose" propose'
-val vote = withClient "vote" vote'
-val mission = withClient "mission" mission'
+val start = withUser "start" start' ()
+val propose = withUser "propose" propose'
+val vote = withUser "vote" vote'
+val mission = withUser "mission" mission'

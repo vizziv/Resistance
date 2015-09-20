@@ -1,8 +1,3 @@
-(*
- * TODO:
- * - avoid needing safeGet.
- *)
-
 fun buttons' rows =
     srcShouldShow <- source True;
     let
@@ -24,28 +19,30 @@ fun button1' row = buttons' (row :: [])
 fun buttons rows = <xml><active code={buttons' rows}/></xml>
 fun button1 rows = <xml><active code={button1' rows}/></xml>
 
-val formStart = button1 {Value = "Start", Onclick = rpc Controller.start}
+fun formStart user =
+    button1 {Value = "Start", Onclick = rpc (Controller.start user)}
 
-val formVote =
+fun formVote user =
     buttons ({Value = "Approve",
-              Onclick = rpc (Controller.vote True)}
+              Onclick = rpc (Controller.vote True user)}
           :: {Value = "Reject",
-              Onclick = rpc (Controller.vote False)} :: [])
+              Onclick = rpc (Controller.vote False user)} :: [])
 
-val formMission =
+fun formMission user =
     buttons ({Value = "Success",
-              Onclick = rpc (Controller.mission True)}
+              Onclick = rpc (Controller.mission True user)}
           :: {Value = "Fail",
-              Onclick = rpc (Controller.mission False)} :: [])
+              Onclick = rpc (Controller.mission False user)} :: [])
 
-fun formPropose' numPlayers missionSize =
+fun formPropose' numPlayers missionSize user =
     srcs <- List.tabulateM (fn _ => source 0.0) missionSize;
     let
         val sgl =
             players <- List.mapM (compose (Monad.mp round) signal) srcs;
             if Lib.distinct players
-            then return (button1 {Value = "Propose",
-                                  Onclick = rpc (Controller.propose players)})
+            then return (button1
+                             {Value = "Propose",
+                              Onclick = rpc (Controller.propose players user)})
             else return <xml></xml>
     in
         return <xml>
@@ -59,63 +56,69 @@ fun formPropose' numPlayers missionSize =
         </xml>
     end
 
-fun formPropose numPlayers missionSize = <xml>
-  <active code={formPropose' numPlayers missionSize}/>
+fun formPropose numPlayers missionSize user = <xml>
+  <active code={formPropose' numPlayers missionSize user}/>
 </xml>
 
-fun render player responseq =
+fun render playerq responseq user =
     case responseq of
         None => <xml></xml>
       | Some response =>
         case response.Request of
             Game.Propose propose =>
-            if player = propose.Leader
+            if playerq = Some propose.Leader
             then formPropose (Game.numPlayers response.Game)
                              propose.MissionSize
+                             user
             else <xml></xml>
           | Game.Mission players =>
-            if List.mem player players
-            then formMission
+            if (case playerq of
+                    None => False
+                  | Some player => List.mem player players)
+            then formMission user
             else <xml></xml>
-          | Game.Vote _ => formVote
+          | Game.Vote _ => formVote user
           | _ => <xml></xml>
 
 fun play showStart group =
-    {Player = player, Channel = chan} <- Controller.joinGroup group;
+    {User = user, Channel = chan} <- Controller.joinGroup group;
     srcShowStart <- source showStart;
     srcResponse <- source None;
+    srcPlayer <- source None;
     buffer <- Buffer.create;
     let
-        fun showInit init =
+        fun showInit {Player = player, Reveal = reveal} =
             "Player " ^ show player ^ ", you're "
-            ^ case init of
+            ^ case reveal of
                   Controller.Resistance => "on the resistance."
                 | Controller.Spy spies =>
                   "a spy. The spy team is " ^ Lib.showList spies ^ "."
         fun listen () =
-            {Response = response, Init = init} <- recv chan;
-            (case init of
+            {Response = response, Init = initq} <- recv chan;
+            (case initq of
                  Some init =>
                  set srcShowStart False;
+                 set srcPlayer (Some init.Player);
                  Buffer.write buffer (showInit init)
                | None => return ());
             set srcResponse (Some response);
             Buffer.write buffer (show response.Game);
             Buffer.write buffer (show response.Request);
             listen ()
-        val fm =
+        val sgnl =
             showStart <- signal srcShowStart;
             responseq <- signal srcResponse;
+            playerq <- signal srcPlayer;
             return (if showStart
-                    then formStart
-                    else render player responseq)
+                    then formStart user
+                    else render playerq responseq user)
     in
         return <xml>
           <body onload={listen ()}>
             <h1>Resistance</h1>
             <h2>Game #{[group]}</h2>
             <div>
-              <dyn signal={fm}/>
+              <dyn signal={sgnl}/>
             </div>
             <div>
               <dyn signal={Buffer.render buffer}/>

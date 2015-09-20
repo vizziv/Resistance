@@ -1,5 +1,17 @@
 fun id [t] (x : t) = x
 
+fun mapiPartial [a] [b] (f : int -> a -> option b) =
+    let
+        fun mp' n acc ls =
+            case ls of
+                [] => List.rev acc
+              | x :: ls => mp' (n+1) (case f n x of
+                                          None => acc
+                                        | Some y => y :: acc) ls
+    in
+        mp' 0 []
+    end
+
 fun distinct [a] (_ : eq a) (_ : ord a) (xs : list a) =
     let
         fun check xs =
