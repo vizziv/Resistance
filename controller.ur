@@ -16,9 +16,38 @@ type user = {Id : id, Player : player}
 
 datatype reveal = Resistance | Spy of list player
 
-type message =
-     {Response : response,
-      Init : option {Player : player, Reveal : reveal}}
+datatype report =
+    Init of {Player : player, Reveal : reveal}
+  | Votes of list {Player : player, Approve : bool}
+  | Actions of {Success : int, Fail : int}
+
+val show_report =
+    let
+        fun showVote {Player = player, Approve = approve} =
+            show player ^ ": " ^ if approve then "approve" else "reject"
+        fun showReport report =
+            case report of
+                Init init =>
+                "Player " ^ show init.Player ^ ", you're "
+                 ^ (case init.Reveal of
+                        Resistance => "on the resistance."
+                      | Spy spies =>
+                        "a spy. The spy team is " ^ Lib.showList spies ^ ".")
+              | Votes votes =>
+                "Votes are " ^
+                Lib.stringList (List.mp showVote
+                                        (List.sort (fn v w =>
+                                                       v.Player > w.Player)
+                                                   votes))
+                ^ "."
+              | Actions actions =>
+                "Mission has " ^ Lib.plural actions.Success "success" ^ " and "
+                ^ Lib.plural actions.Fail "failure" ^ "."
+    in
+        mkShow showReport
+    end
+
+type message = {Response : response, Report : option report}
 
 sequence ids
 
@@ -33,7 +62,9 @@ table players :
 table groups : {Id : id, Size : int} PRIMARY KEY Id
 table games : {Id : id, Response : serialized response} PRIMARY KEY Id
 table votes : {Id : id, Player : player, Approve : bool}
+                  CONSTRAINT User UNIQUE (Id, Player)
 table actions : {Id : id, Player : player, Success : bool}
+                  CONSTRAINT User UNIQUE (Id, Player)
 
 fun load id = Monad.mp deserialize (Lib.sqlLookup1 [#Id] [#Response] games id)
 
@@ -65,14 +96,14 @@ fun joinGroup id =
 val allGroups =
     query1' (SELECT groups.Id FROM groups) (fn row ids => row.Id :: ids) []
 
-fun broadcast id response =
+fun broadcast id response report =
     store id response;
     debug ("broadcast " ^ show response.Request);
     queryI1 (SELECT players.Channel
              FROM players
              WHERE players.Id = {[id]})
             (fn {Channel = chan, ...} => send chan {Response = response,
-                                                    Init = None})
+                                                    Report = report})
 
 fun start' id _ _ _ : transaction unit =
     numPlayers <- sizeGroup id;
@@ -97,10 +128,11 @@ fun start' id _ _ _ : transaction unit =
                 (fn {Channel = chan, Player = player, Role = roleSerial} =>
                     send chan
                          {Response = response,
-                          Init = Some {Player = player,
-                                       Reveal = case deserialize roleSerial of
-                                                    Some Game.Spy => Spy spies
-                                                  | _ => Resistance}})
+                          Report = Some (Init {Player = player,
+                                               Reveal =
+                                               case deserialize roleSerial of
+                                                   Some Game.Spy => Spy spies
+                                                 | _ => Resistance})})
     end
 
 fun propose' id player _ players =
@@ -108,7 +140,7 @@ fun propose' id player _ players =
     case request of
         Game.Propose {Leader = leader, ...} =>
         if leader = player
-        then broadcast id (Game.submitProposal players game)
+        then broadcast id (Game.submitProposal players game) None
         else return ()
       | _ => return ()
 
@@ -123,13 +155,24 @@ fun vote' id player _ approve =
                            FROM votes
                            WHERE votes.Id = {[id]});
         if count >= Game.numPlayers game
-        then approves <- query1' (Lib.sqlWhereEq [#Id] [_] votes id)
-                                 (fn {Approve = a} as => a :: as)
-                                 [];
+        then vs <- queryL1 (Lib.sqlWhereEq [#Id]
+                                           [_]
+                                           votes
+                                           id);
              dml (DELETE FROM votes WHERE Id = {[id]});
-             broadcast id (Game.submitVote players approves game)
+             broadcast id
+                       (Game.submitVote players
+                                        (List.mp (fn v => v.Approve) vs)
+                                        game)
+                       (Some (Votes vs))
         else return ()
       | _ => return ()
+
+val countActions = List.foldl (fn success {Success = s, Fail = f} =>
+                                  if success
+                                  then {Success = s + 1, Fail = f}
+                                  else {Success = s, Fail = f + 1})
+                              {Success = 0, Fail = 0}
 
 fun mission' id player roleq success =
     {Game = game, Request = request} <- load id;
@@ -149,7 +192,9 @@ fun mission' id player roleq success =
                                        (fn {Success = s} ss => s :: ss)
                                        [];
                   dml (DELETE FROM actions WHERE Id = {[id]});
-                  broadcast id (Game.submitMission successes game)
+                  broadcast id
+                            (Game.submitMission successes game)
+                            (Some (Actions (countActions successes)))
              else return ()
         else return ()
       | _ => return ()
@@ -161,7 +206,7 @@ fun withUser [t] name (action : id -> player -> option role
         val {Id = id, Player = player} = user
     in
         debug ("withUser: " ^ name ^ " " ^ show id ^ "/" ^ show player);
-        {Role = roleSerial} <- Lib.sqlLookup [#User] [_] players (serialize user);
+        roleSerial <- Lib.sqlLookup1 [#User] [#Role] players (serialize user);
         action id player (deserialize roleSerial) x
     end
 

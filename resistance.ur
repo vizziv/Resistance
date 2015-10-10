@@ -14,10 +14,9 @@ fun buttons' rows =
         return <xml><dyn signal={sgl}/></xml>
     end
 
-fun button1' row = buttons' (row :: [])
-
 fun buttons rows = <xml><active code={buttons' rows}/></xml>
-fun button1 rows = <xml><active code={button1' rows}/></xml>
+
+fun button1 row = buttons (row :: [])
 
 fun formStart user =
     button1 {Value = "Start", Onclick = rpc (Controller.start user)}
@@ -87,19 +86,16 @@ fun play showStart group =
     srcPlayer <- source None;
     buffer <- Buffer.create;
     let
-        fun showInit {Player = player, Reveal = reveal} =
-            "Player " ^ show player ^ ", you're "
-            ^ case reveal of
-                  Controller.Resistance => "on the resistance."
-                | Controller.Spy spies =>
-                  "a spy. The spy team is " ^ Lib.showList spies ^ "."
         fun listen () =
-            {Response = response, Init = initq} <- recv chan;
-            (case initq of
-                 Some init =>
-                 set srcShowStart False;
-                 set srcPlayer (Some init.Player);
-                 Buffer.write buffer (showInit init)
+            {Response = response, Report = reportq} <- recv chan;
+            (case reportq of
+                 Some report =>
+                 (case report of
+                      Controller.Init init =>
+                      set srcShowStart False;
+                      set srcPlayer (Some init.Player)
+                    | _ => return ());
+                 Buffer.write buffer (show report)
                | None => return ());
             set srcResponse (Some response);
             Buffer.write buffer (show response.Game);

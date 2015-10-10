@@ -2,6 +2,7 @@ type round = int
 type score = int
 type attempt = int
 type player = int
+
 type game =
     {NumPlayers : int,
      Round : round,
@@ -24,7 +25,7 @@ val show_request =
             case request of
                 Propose {Leader = player, MissionSize = size} =>
                 "Player " ^ show player ^ ": propose "
-                ^ show size ^ " players for a mission."
+                ^ Lib.plural size "player" ^ " for a mission."
               | Vote players =>
                 "All players: vote on " ^ Lib.showList players ^ "."
               | Mission players =>

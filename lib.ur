@@ -22,17 +22,26 @@ fun distinct [a] (_ : eq a) (_ : ord a) (xs : list a) =
         check (List.sort le xs)
     end
 
-fun showList [t] (_ : show t) (xs : list t) =
+fun plural (n : int) (x : string) =
+    show n ^ " " ^ if n = 1
+                   then x
+                   else if strsub x (strlen x - 1) = #"s"
+                   then x ^ "es"
+                   else x ^ "s"
+
+fun stringList (xs : list string) =
     let
-        fun showList' xs =
+        fun stringList' xs =
             case xs of
                 [] => "]"
-              | x :: xs => ", " ^ show x ^ showList' xs
+              | x :: xs => ", " ^ x ^ stringList' xs
     in
         case xs of
             [] => "[]"
-          | x :: xs => "[" ^ show x ^ showList' xs
+          | x :: xs => "[" ^ x ^ stringList' xs
     end
+
+fun showList [t] (_ : show t) (xs : list t) = stringList (List.mp show xs)
 
 fun keep [keep ::: {Type}] [drop ::: {Type}] [keep ~ drop]
          (xs : $(keep ++ drop)) : $keep =
