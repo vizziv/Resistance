@@ -39,6 +39,8 @@ fun formPropose' numPlayers missionSize user =
         val sgl =
             players <- List.mapM (compose (Monad.mp round) signal) srcs;
             if Lib.distinct players
+               && Lib.minimum numPlayers players >= 0
+               && Lib.maximum 0 players < numPlayers
             then return (button1
                              {Value = "Propose",
                               Onclick = rpc (Controller.propose players user)})

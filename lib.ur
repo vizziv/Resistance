@@ -1,5 +1,8 @@
 fun id [t] (x : t) = x
 
+fun maximum [t] (_ : ord t) : t -> list t -> t = List.foldl max
+fun minimum [t] (_ : ord t) : t -> list t -> t = List.foldl min
+
 fun mapiPartial [a] [b] (f : int -> a -> option b) =
     let
         fun mp' n acc ls =
