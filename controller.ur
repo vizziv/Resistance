@@ -2,7 +2,23 @@
  * TODO:
  * - handle bad function calls better (e.g. one player votes twice)
  * - extract common factor from vote and mission
- * - report bug where unification error happens instead of type error
+ * - suggest records be valid paths so things like [rpc foo.Bar] work.
+ * - report this:
+
+$ urweb resistance -dbms sqlite
+/Users/ziv/Dropbox/Dev/Resistance/clientRequest.ur:41:24: (to 41:26) Unification failure
+Expression:  hs
+  Have con:
+$(map (fn t :: (Type * Type) => t.2 -> transaction {}) M.interface)
+  Need con:
+$(map (fn t' :: Type => t' -> <UNIF:U63::Type+1>) <UNIF:U58::{Type}>)
+Kind unification failure
+Have:  (Type * Type)
+Need:  Type
+Incompatible kinds
+Kind 1:  (Type * Type)
+Kind 2:  Type
+
  *)
 
 type id = int
@@ -75,7 +91,7 @@ val sizeGroup = Lib.sqlLookup1 [#Id] [#Size] groups
 
 val createGroup =
     id <- nextval ids;
-    dml (Lib.insertRow groups {Id = id, Size = 0});
+    Lib.insertRow groups {Id = id, Size = 0};
     return id
 
 fun joinGroup id =
@@ -85,11 +101,11 @@ fun joinGroup id =
         val user = {Id = id, Player = player}
     in
         dml (UPDATE groups SET Size = Size + 1 WHERE Id = {[id]});
-        dml (Lib.insertRow players {User = serialize user,
-                                    Channel = chan,
-                                    Id = id,
-                                    Role = serialize None,
-                                    Player = player});
+        Lib.insertRow players {User = serialize user,
+                               Channel = chan,
+                               Id = id,
+                               Role = serialize None,
+                               Player = player};
         return {User = user, Channel = chan}
     end
 
@@ -115,7 +131,7 @@ fun start' id _ _ _ : transaction unit =
                           WHERE Id = {[id]} AND Player = {[player]}))
                  ()
                  roles;
-    dml (Lib.insertRow games {Id = id, Response = serialize response});
+    Lib.insertRow games {Id = id, Response = serialize response};
     let
         val spies =
             Lib.mapiPartial (fn i role =>
@@ -125,12 +141,12 @@ fun start' id _ _ _ : transaction unit =
                             roles
     in
         queryI1 (Lib.sqlWhereEq [#Id] [_] players id)
-                (fn {Channel = chan, Player = player, Role = roleSerial} =>
+                (fn {Channel = chan, Player = player, Role = rolez} =>
                     send chan
                          {Response = response,
                           Report = Some (Init {Player = player,
                                                Reveal =
-                                               case deserialize roleSerial of
+                                               case deserialize rolez of
                                                    Some Game.Spy => Spy spies
                                                  | _ => Resistance})})
     end
@@ -148,9 +164,9 @@ fun vote' id player _ approve =
     {Game = game, Request = request} <- load id;
     case request of
         Game.Vote players =>
-        dml (Lib.insertRow votes {Id = id,
-                                  Player = player,
-                                  Approve = approve});
+        Lib.insertRow votes {Id = id,
+                             Player = player,
+                             Approve = approve};
         count <- oneRowE1 (SELECT COUNT( * )
                            FROM votes
                            WHERE votes.Id = {[id]});
@@ -179,11 +195,11 @@ fun mission' id player roleq success =
     case request of
         Game.Mission players =>
         if List.mem player players
-        then dml (Lib.insertRow actions {Id = id,
-                                         Player = player,
-                                         Success = case roleq of
-                                                       Some Game.Spy => success
-                                                     | _ => True});
+        then Lib.insertRow actions {Id = id,
+                                    Player = player,
+                                    Success = case roleq of
+                                                  Some Game.Spy => success
+                                                | _ => True};
              count <- oneRowE1 (SELECT COUNT( * )
                                 FROM actions
                                 WHERE actions.Id = {[id]});
@@ -206,8 +222,8 @@ fun withUser [t] name (action : id -> player -> option role
         val {Id = id, Player = player} = user
     in
         debug ("withUser: " ^ name ^ " " ^ show id ^ "/" ^ show player);
-        roleSerial <- Lib.sqlLookup1 [#User] [#Role] players (serialize user);
-        action id player (deserialize roleSerial) x
+        rolez <- Lib.sqlLookup1 [#User] [#Role] players (serialize user);
+        action id player (deserialize rolez) x
     end
 
 val start = withUser "start" start' ()

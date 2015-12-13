@@ -3,6 +3,8 @@ fun id [t] (x : t) = x
 fun maximum [t] (_ : ord t) : t -> list t -> t = List.foldl max
 fun minimum [t] (_ : ord t) : t -> list t -> t = List.foldl min
 
+fun cases [ts ::: {Type}] [u] (fs : $(map (fn t => t -> u) ts)) v = match v fs
+
 fun mapiPartial [a] [b] (f : int -> a -> option b) =
     let
         fun mp' n acc ls =
@@ -26,11 +28,24 @@ fun distinct [a] (_ : eq a) (_ : ord a) (xs : list a) =
     end
 
 fun plural (n : int) (x : string) =
-    show n ^ " " ^ if n = 1
-                   then x
-                   else if strsub x (strlen x - 1) = #"s"
-                   then x ^ "es"
-                   else x ^ "s"
+    let
+        fun vowel c = case strindex "aeiou" c of
+                          None => False
+                        | Some _ => True
+        val lenMinus1 = strlen x - 1
+        val last = strsub x lenMinus1
+    in
+        show n ^ " " ^
+        if n = 1
+        then x
+        else case last of
+                 #"s" => x ^ "es"
+               | #"x" => x ^ "es"
+               | #"y" => if vowel (strsub x (lenMinus1 - 1))
+                         then x ^ "s"
+                         else substring x 0 lenMinus1 ^ "ies"
+               | _ => x ^ "s"
+    end
 
 fun stringList (xs : list string) =
     let
@@ -56,6 +71,13 @@ fun set [keep ::: {Type}] [change ::: {Type}] [keep ~ change]
 
 fun extract [f ::: Name] [t] (xs : $[f = t]) : t = xs.f
 
+fun spawnListener [t] (action : t -> transaction unit) (chan : channel t) =
+    let
+        fun listen () = x <- recv chan; action x; listen ()
+    in
+        spawn (listen ())
+    end
+
 fun sqlInjectRow [tables ::: {{Type}}] [agg ::: {{Type}}] [exps ::: {Type}]
                  [ts ::: {Type}] (f : folder ts)
                  (injs : $(map sql_injectable ts)) (xs : $ts) =
@@ -65,7 +87,7 @@ fun sqlInjectRow [tables ::: {{Type}}] [agg ::: {{Type}}] [exps ::: {Type}]
 fun insertRow [fields ::: {Type}] [uniques ::: {{Unit}}]
               (f : folder fields) (injs : $(map sql_injectable fields))
               (tab : sql_table fields uniques) (row : $fields) =
-    insert tab (@sqlInjectRow f injs row)
+    dml (insert tab (@sqlInjectRow f injs row))
 
 fun sqlWhereEq [nKey :: Name] [vals :: {Type}] [[nKey] ~ vals]
                [tKey] (_ : sql_injectable tKey)
@@ -82,11 +104,9 @@ fun sqlWhereEq [nKey :: Name] [vals :: {Type}] [[nKey] ~ vals]
                  Where = sql_binary sql_eq
                                     (sql_field [#T] [nKey])
                                     (sql_inject key),
-                 GroupBy = sql_subset [[T = ([nKey = tKey] ++ vals ++ other,
-                                             [])]],
+                 GroupBy = sql_subset [[T = (vals, [nKey = tKey] ++ other)]],
                  Having = sql_inject True,
-                 SelectFields = sql_subset [[T = (vals,
-                                                  [nKey = tKey] ++ other)]],
+                 SelectFields = sql_subset_all [_],
                  SelectExps = {}}
     in
         sql_query

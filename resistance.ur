@@ -1,37 +1,17 @@
-fun buttons' rows =
-    srcShouldShow <- source True;
-    let
-        val sgl =
-            shouldShow <- signal srcShouldShow;
-            if shouldShow
-            then return (List.mapX (fn {Value = value,
-                                        Onclick = onclick} => <xml>
-              <button value={value}
-                      onclick={fn _ => set srcShouldShow False; onclick}/>
-            </xml>) rows)
-            else return <xml></xml>
-    in
-        return <xml><dyn signal={sgl}/></xml>
-    end
-
-fun buttons rows = <xml><active code={buttons' rows}/></xml>
-
-fun button1 row = buttons (row :: [])
-
 fun formStart user =
-    button1 {Value = "Start", Onclick = rpc (Controller.start user)}
+    Ui.button1 {Value = "Start", Onclick = rpc (Controller.start user)}
 
 fun formVote user =
-    buttons ({Value = "Approve",
-              Onclick = rpc (Controller.vote True user)}
-          :: {Value = "Reject",
-              Onclick = rpc (Controller.vote False user)} :: [])
+    Ui.buttons ({Value = "Approve",
+                 Onclick = rpc (Controller.vote True user)}
+             :: {Value = "Reject",
+                 Onclick = rpc (Controller.vote False user)} :: [])
 
 fun formMission user =
-    buttons ({Value = "Success",
-              Onclick = rpc (Controller.mission True user)}
-          :: {Value = "Fail",
-              Onclick = rpc (Controller.mission False user)} :: [])
+    Ui.buttons ({Value = "Success",
+                 Onclick = rpc (Controller.mission True user)}
+             :: {Value = "Fail",
+                 Onclick = rpc (Controller.mission False user)} :: [])
 
 fun formPropose' numPlayers missionSize user =
     srcs <- List.tabulateM (fn _ => source 0.0) missionSize;
@@ -41,7 +21,7 @@ fun formPropose' numPlayers missionSize user =
             if Lib.distinct players
                && Lib.minimum numPlayers players >= 0
                && Lib.maximum 0 players < numPlayers
-            then return (button1
+            then return (Ui.button1
                              {Value = "Propose",
                               Onclick = rpc (Controller.propose players user)})
             else return <xml></xml>
@@ -143,7 +123,7 @@ val menu =
             <li>
               <form>
                 <hidden{#Dummy}/>
-                <submit action={playJoin group} value={"Join game #" ^ (show group)}/>
+                <submit action={playJoin group} value={"Join game #" ^ show group}/>
               </form>
             </li>
           </xml>) groups}
@@ -154,5 +134,20 @@ val menu =
             </form>
           </li>
         </ul>
+      </body>
+    </xml>
+
+fun fib (n : int) = if n <= 1 then n else fib (n-1) + fib (n-2)
+
+fun getFib n : transaction int = return (fib n)
+
+val test =
+    xr <- source 0.0;
+    yr <- source 0;
+    return <xml>
+      <body>
+        <cnumber source={xr}/>
+        <button onclick={fn _ => x <- get xr; y <- rpc (getFib (round x)); set yr y}/>
+        <dyn signal={y <- signal yr; return <xml>{[y]}</xml>}/>
       </body>
     </xml>

@@ -6,6 +6,8 @@ $/list
 $/option
 $/monad
 lib
+ui
+clientRequest
 game
 controller
 buffer

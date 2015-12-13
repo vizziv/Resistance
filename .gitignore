@@ -2,9 +2,8 @@
 *.exe
 *.sql
 
-# Database
-db/*
-logfile
+# Sqlite
+resistance
 
 # OS X
 .DS_Store
