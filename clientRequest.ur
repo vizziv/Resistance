@@ -55,23 +55,37 @@ structure CR = ClientRequest(struct
     fun mkCont ask =
         Lib.cases
             {A = fn n => debug (Lib.plural n "object"); ask (make [#B] n),
-             B = fn n => debug (Lib.plural n "thingy")}
+             B = fn n => debug (Lib.plural n "thingy"); ask (make [#A] n)}
 end)
 
 fun test' _ =
     CR.Server.ask (make [#A] 9001);
     let
-        val action =
+        fun sgl answerqSrc =
+            answerq <- signal answerqSrc;
+            case answerq of
+                None => return <xml>Nothing to do</xml>
+              | Some answer =>
+                return <xml>
+                  Submit: {Ui.button {Value = "Click me!", Onclick = answer ()}}
+                </xml>
+        fun action answerqSrc =
             Lib.cases
-                {A = fn n => CR.Client.answer (make [#A] (n+5)),
+                {A = fn n => set answerqSrc (Some (fn () => CR.Client.answer (make [#A] (n+5)))),
                  B = fn n => CR.Client.answer (make [#B] (n-2))}
+        val mkForm =
+            answerqSrc <- source None;
+            return <xml>
+              <dyn signal={sgl answerqSrc}/>
+              {Ui.button {Value = "Start listening",
+                          Onclick = CR.Client.init (action answerqSrc)}}
+            </xml>
     in
         return <xml>
           <body>
             <h1>Test</h1>
             Inspect ALL the elements!
-            {Ui.button1 {Value = "Start listening",
-                         Onclick = CR.Client.init action}}
+            <active code={mkForm}/>
           </body>
         </xml>
     end

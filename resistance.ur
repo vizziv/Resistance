@@ -1,5 +1,5 @@
 fun formStart user =
-    Ui.button1 {Value = "Start", Onclick = rpc (Controller.start user)}
+    Ui.button {Value = "Start", Onclick = rpc (Controller.start user)}
 
 fun formVote user =
     Ui.buttons ({Value = "Approve",
@@ -21,7 +21,7 @@ fun formPropose' numPlayers missionSize user =
             if Lib.distinct players
                && Lib.minimum numPlayers players >= 0
                && Lib.maximum 0 players < numPlayers
-            then return (Ui.button1
+            then return (Ui.button
                              {Value = "Propose",
                               Onclick = rpc (Controller.propose players user)})
             else return <xml></xml>
@@ -137,6 +137,7 @@ val menu =
       </body>
     </xml>
 
+(*
 fun fib (n : int) = if n <= 1 then n else fib (n-1) + fib (n-2)
 
 fun getFib n : transaction int = return (fib n)
@@ -151,3 +152,6 @@ val test =
         <dyn signal={y <- signal yr; return <xml>{[y]}</xml>}/>
       </body>
     </xml>
+*)
+
+val test = ClientRequest.test

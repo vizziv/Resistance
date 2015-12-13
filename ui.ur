@@ -15,4 +15,4 @@ fun buttons' rows =
 
 fun buttons rows = <xml><active code={buttons' rows}/></xml>
 
-fun button1 row = buttons (row :: [])
+fun button row = buttons (row :: [])
